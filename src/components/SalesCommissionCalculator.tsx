@@ -3,7 +3,7 @@
 import { useState, useRef } from "react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Download, Plus, RotateCcw, AlertCircle, Calculator, User, Coins, FileSpreadsheet } from "lucide-react"
+import { Download, Plus, RotateCcw, Calculator } from "lucide-react"
 import * as XLSX from "xlsx"
 
 // --- 1. Logic ส่วนการคำนวณ ---
@@ -27,10 +27,10 @@ const calculateCommission = (sales: number): CommissionBreakdown => {
   let remainingSales = sales
   let tier1 = 0, tier2 = 0, tier3 = 0
 
-  if (remainingSales > 1000) { tier1 = 1000 * 0.10; remainingSales -= 1000 } 
+  if (remainingSales > 1000) { tier1 = 1000 * 0.10; remainingSales -= 1000 }
   else { tier1 = remainingSales * 0.10; remainingSales = 0 }
 
-  if (remainingSales > 800) { tier2 = 800 * 0.15; remainingSales -= 800 } 
+  if (remainingSales > 800) { tier2 = 800 * 0.15; remainingSales -= 800 }
   else { tier2 = remainingSales * 0.15; remainingSales = 0 }
 
   if (remainingSales > 0) { tier3 = remainingSales * 0.20 }
@@ -61,25 +61,28 @@ export default function SalesCommissionCalculator() {
   const [employeeId, setEmployeeId] = useState<InputState>({ value: "", error: "", isValid: false })
   const [firstName, setFirstName] = useState<InputState>({ value: "", error: "", isValid: false })
   const [lastName, setLastName] = useState<InputState>({ value: "", error: "", isValid: false })
+  
   const [locks, setLocks] = useState<InputState>({ value: "", error: "", isValid: false })
   const [stocks, setStocks] = useState<InputState>({ value: "", error: "", isValid: false })
   const [barrels, setBarrels] = useState<InputState>({ value: "", error: "", isValid: false })
+  
   const [calculated, setCalculated] = useState(false)
   const [sales, setSales] = useState(0)
   const [commission, setCommission] = useState({ tier1: 0, tier2: 0, tier3: 0, total: 0 })
   const [history, setHistory] = useState<CalculationRecord[]>([])
 
-  // ฟังก์ชันจัดรูปแบบตัวเลข (ใช้คอมม่าแสดงหลักพัน)
+  // ฟังก์ชันจัดรูปแบบตัวเลข
   const formatNumber = (val: number) => new Intl.NumberFormat('th-TH', { style: 'decimal', minimumFractionDigits: 2 }).format(val)
 
   const handleCalculate = () => {
-    const l = parseInt(locks.value), s = parseInt(stocks.value), b = parseInt(barrels.value)
+    // ใช้ Number() แทน parseInt เพื่อความแม่นยำตาม Validation
+    const l = Number(locks.value), s = Number(stocks.value), b = Number(barrels.value)
     const totalSales = calculateSales(l, s, b)
     setSales(totalSales)
     setCommission(calculateCommission(totalSales))
     setCalculated(true)
 
-    // เลื่อนลงอัตโนมัติไปยังส่วนผลลัพธ์
+    // เลื่อนลงอัตโนมัติ
     setTimeout(() => {
       resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
     }, 100)
@@ -89,15 +92,39 @@ export default function SalesCommissionCalculator() {
     const newRecord: CalculationRecord = {
       id: Date.now().toString(), timestamp: new Date(), employeeId: employeeId.value,
       employeeName: `${firstName.value} ${lastName.value}`,
-      locks: parseInt(locks.value), stocks: parseInt(stocks.value), barrels: parseInt(barrels.value),
+      locks: Number(locks.value), stocks: Number(stocks.value), barrels: Number(barrels.value),
       sales, commission
     }
     setHistory([newRecord, ...history])
-    setLocks({ value: "", error: "", isValid: false }); setStocks({ value: "", error: "", isValid: false }); setBarrels({ value: "", error: "", isValid: false })
+    // รีเซ็ตค่า Input สินค้า แต่คงค่าพนักงานไว้
+    setLocks({ value: "", error: "", isValid: false })
+    setStocks({ value: "", error: "", isValid: false })
+    setBarrels({ value: "", error: "", isValid: false })
     setCalculated(false)
   }
 
-  const isFormValid = locks.isValid && stocks.isValid && barrels.isValid && employeeId.isValid && firstName.value && lastName.value
+  // ฟังก์ชัน Export Excel
+  const handleExportExcel = () => {
+    if (history.length === 0) return;
+    
+    const dataToExport = history.map(item => ({
+        "วันที่เวลา": item.timestamp.toLocaleString('th-TH'),
+        "รหัสพนักงาน": item.employeeId,
+        "ชื่อ-นามสกุล": item.employeeName,
+        "Locks": item.locks,
+        "Stocks": item.stocks,
+        "Barrels": item.barrels,
+        "ยอดขายรวม": item.sales,
+        "ค่าคอมมิชชั่น": item.commission.total
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Commission Report");
+    XLSX.writeFile(workbook, `Commission_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
+  }
+
+  const isFormValid = locks.isValid && stocks.isValid && barrels.isValid && employeeId.isValid && firstName.value.trim() !== "" && lastName.value.trim() !== ""
 
   return (
     <div className="min-h-screen bg-slate-50 py-12 px-4 text-slate-900 font-sans">
@@ -116,22 +143,27 @@ export default function SalesCommissionCalculator() {
                 <div className="flex justify-between items-center mb-6">
                     <h2 className="text-xl font-bold">ข้อมูลพนักงาน</h2>
                     <Button variant="ghost" size="sm" onClick={() => window.location.reload()} className="text-slate-400 hover:text-purple-600">
-                      <RotateCcw className="w-4 h-4 mr-1"/> รีเซ็ต
+                      <RotateCcw className="w-4 h-4 mr-1"/> รีเซ็ตทั้งหมด
                     </Button>
                 </div>
                 <div className="space-y-6">
                     <div className="max-w-[250px]">
                         <label className="text-sm font-bold block mb-1">รหัสพนักงาน</label>
-                        <Input value={employeeId.value} onChange={(e) => setEmployeeId({value: e.target.value.toUpperCase().replace(/\s/g, ''), error: "", isValid: e.target.value.length >= 3})} className={employeeId.error ? "border-red-500" : ""} placeholder="EMP001" />
+                        <Input 
+                            value={employeeId.value} 
+                            onChange={(e) => setEmployeeId({value: e.target.value.toUpperCase().replace(/\s/g, ''), error: "", isValid: e.target.value.length >= 3})} 
+                            className={employeeId.error ? "border-red-500" : ""} 
+                            placeholder="EMP001" 
+                        />
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
                             <label className="text-sm font-bold block mb-1">ชื่อ</label>
-                            <Input value={firstName.value} onChange={(e) => setFirstName({ ...firstName, value: e.target.value })} placeholder="ชื่อภาษาไทย/อังกฤษ" />
+                            <Input value={firstName.value} onChange={(e) => setFirstName({ ...firstName, value: e.target.value, isValid: !!e.target.value })} placeholder="ชื่อภาษาไทย/อังกฤษ" />
                         </div>
                         <div>
                             <label className="text-sm font-bold block mb-1">นามสกุล</label>
-                            <Input value={lastName.value} onChange={(e) => setLastName({ ...lastName, value: e.target.value })} placeholder="นามสกุล" />
+                            <Input value={lastName.value} onChange={(e) => setLastName({ ...lastName, value: e.target.value, isValid: !!e.target.value })} placeholder="นามสกุล" />
                         </div>
                     </div>
                 </div>
@@ -165,13 +197,18 @@ export default function SalesCommissionCalculator() {
                 <Button onClick={handleCalculate} disabled={!isFormValid} className="w-full bg-purple-600 hover:bg-purple-700 h-12 rounded-full font-bold text-white shadow-lg transition-all">คำนวณ</Button>
             </div>
 
-            {/* 3. ส่วนผลลัพธ์ (สไตล์ตามรูปภาพตัวอย่าง) */}
+            {/* 3. ส่วนผลลัพธ์ */}
             {calculated && (
                 <div ref={resultRef} className="bg-white p-8 rounded-xl border border-slate-200 shadow-sm scroll-mt-10 animate-in fade-in slide-in-from-bottom-4">
                     <div className="flex justify-between items-center mb-8">
                         <h2 className="text-2xl font-bold">ผลลัพธ์</h2>
                         <div className="flex gap-2">
-                            <Button variant="outline" className="text-slate-600 border-slate-200 h-10 px-4 font-bold">
+                            <Button 
+                                variant="outline" 
+                                onClick={handleExportExcel}
+                                disabled={history.length === 0 && !calculated}
+                                className="text-slate-600 border-slate-200 h-10 px-4 font-bold"
+                            >
                               <Download className="w-4 h-4 mr-2"/> Excel
                             </Button>
                             <Button onClick={handleSaveAndNew} className="bg-purple-600 hover:bg-purple-700 text-white h-10 px-4 font-bold">
@@ -180,27 +217,32 @@ export default function SalesCommissionCalculator() {
                         </div>
                     </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
-    {/* ส่วนยอดขายรวม */}
-    <div className="flex flex-col">
-        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">ยอดขายรวม</p>
-        {/* เปลี่ยนเป็น flex-row และใช้ items-baseline เพื่อให้ฐานตัวอักษรตรงกัน */}
-        <div className="flex flex-row items-baseline gap-2 leading-tight">
-            <span className="text-4xl font-black text-slate-800 tracking-tight">
-                {formatNumber(sales)}
-            </span>
-            <span className="text-xl font-black text-slate-800">
-                บาท
-            </span>
-        </div>
-    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                        {/* ส่วนยอดขายรวม: ปรับ Layout ให้ฐานตัวอักษรตรงกัน */}
+                        <div className="flex flex-col">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">ยอดขายรวม</p>
+                            <div className="flex flex-row items-baseline gap-2 leading-tight">
+                                <span className="text-4xl font-black text-slate-800 tracking-tight">
+                                    {formatNumber(sales)}
+                                </span>
+                                <span className="text-xl font-black text-slate-800">
+                                    บาท
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* การ์ดแสดงผลค่าคอมมิชชั่น */}
                         <div className="bg-purple-600 p-6 rounded-xl text-white relative shadow-lg shadow-purple-100 overflow-hidden">
                             <p className="text-xs font-bold text-purple-100 uppercase mb-1 tracking-widest">คอมมิชชั่นสุทธิ</p>
-                            <p className="text-3xl font-black mb-6">{formatNumber(commission.total)} บาท</p>
+                            <div className="flex flex-row items-baseline gap-2 mb-6">
+                                <span className="text-3xl font-black">{formatNumber(commission.total)}</span>
+                                <span className="text-lg font-bold text-purple-200">บาท</span>
+                            </div>
+                            
                             <div className="pt-4 border-t border-purple-400 text-[10px] font-bold text-purple-100 flex justify-between uppercase">
-                                <span>T1: ${formatNumber(commission.tier1)}</span>
-                                <span>T2: ${formatNumber(commission.tier2)}</span>
-                                <span>T3: ${formatNumber(commission.tier3)}</span>
+                                <span>T1: {formatNumber(commission.tier1)}</span>
+                                <span>T2: {formatNumber(commission.tier2)}</span>
+                                <span>T3: {formatNumber(commission.tier3)}</span>
                             </div>
                         </div>
                     </div>
