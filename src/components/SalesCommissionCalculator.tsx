@@ -274,4 +274,3 @@ export default function SalesCommissionCalculator() {
     </div>
   )
 }
-// SQA Inspection point
